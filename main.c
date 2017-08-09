@@ -208,8 +208,8 @@ static const struct option long_options[] = {
 	OPTION("script-tun", 0, 'S'),
 	OPTION("syslog", 0, 'l'),
 	OPTION("csd-user", 1, OPT_CSD_USER),
-	OPTION("csd-wrapper", 1, OPT_CSD_WRAPPER),
 #endif
+	OPTION("csd-wrapper", 1, OPT_CSD_WRAPPER),
 	OPTION("pfs", 0, OPT_PFS),
 	OPTION("certificate", 1, 'c'),
 	OPTION("sslkey", 1, 'k'),
@@ -1148,10 +1148,10 @@ int main(int argc, char **argv)
 			get_uids(config_arg, &vpninfo->uid_csd, &vpninfo->gid_csd);
 			vpninfo->uid_csd_given = 1;
 			break;
+#endif /* !_WIN32 */
 		case OPT_CSD_WRAPPER:
 			vpninfo->csd_wrapper = keep_config_arg();
 			break;
-#endif /* !_WIN32 */
 		case OPT_PROTOCOL:
 			if (openconnect_set_protocol(vpninfo, config_arg))
 				exit(1);
