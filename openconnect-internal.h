@@ -562,8 +562,8 @@ struct openconnect_info {
 
 	char *dtls_cipher;
 	char *vpnc_script;
-#ifndef _WIN32
 	int uid_csd_given;
+#ifndef _WIN32
 	uid_t uid_csd;
 	gid_t gid_csd;
 	uid_t uid;
