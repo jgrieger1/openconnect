@@ -520,6 +520,25 @@ int script_config_tun(struct openconnect_info *vpninfo, const char *reason)
 	free(script_w);
 	return ret;
 }
+
+int apply_script_env(struct oc_vpn_option *envs)
+{
+	struct oc_vpn_option *p;
+	char *envstr;
+
+	for (p = envs; p; p = p->next) {
+		if (p->value) {
+				asprintf(&envstr, "%s=%s", p->option, p->value);
+				putenv(envstr);
+				free (envstr);
+			}
+//			setenv(p->option, p->value, 1);
+//		else
+//			unsetenv(p->option);
+	}
+	return 0;
+}
+
 #else
 /* Must only be run after fork(). */
 int apply_script_env(struct oc_vpn_option *envs)

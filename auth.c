@@ -38,6 +38,8 @@
 
 #include "openconnect-internal.h"
 
+static char* join_strings(char *strings[], int count);
+
 static int xmlpost_append_form_opts(struct openconnect_info *vpninfo,
 				    struct oc_auth_form *form, struct oc_text_buf *body);
 static int cstp_can_gen_tokencode(struct openconnect_info *vpninfo,
@@ -977,11 +979,11 @@ static int fetch_config(struct openconnect_info *vpninfo)
 
 static int run_csd_script(struct openconnect_info *vpninfo, char *buf, int buflen)
 {
-#if defined(_WIN32) || defined(__native_client__)
-	vpn_progress(vpninfo, PRG_ERR,
-		     _("Error: Running the 'Cisco Secure Desktop' trojan on this platform is not yet implemented.\n"));
-	return -EPERM;
-#else
+//#if defined(_WIN32) || defined(__native_client__)
+//	vpn_progress(vpninfo, PRG_ERR,
+//		     _("Error: Running the 'Cisco Secure Desktop' trojan on this platform is not yet implemented.\n"));
+//	return -EPERM;
+//#else
 	char fname[64];
 	int fd, ret;
 	pid_t child;
@@ -1006,6 +1008,9 @@ static int run_csd_script(struct openconnect_info *vpninfo, char *buf, int bufle
 #endif
 
 	fname[0] = 0;
+	// snprintf(fname, 64, "cstub.exe%s", "");
+
+#ifndef _WIN32
 	if (buflen) {
 		struct oc_vpn_option *opt;
 		const char *tmpdir = NULL;
@@ -1119,13 +1124,28 @@ static int run_csd_script(struct openconnect_info *vpninfo, char *buf, int bufle
 						  "CSD code with root privileges\n"
 						  "\t Use command line option \"--csd-user\"\n"));
 			}
+#else /* Windows only */
+	{
+		{
+			char scertbuf[MD5_SIZE * 2 + 1];
+			char ccertbuf[MD5_SIZE * 2 + 1];
+			char *csd_argv[32];
+			int i = 0;
+
+		    STARTUPINFO si;
+		    PROCESS_INFORMATION pi;
+		    char *str_csd_argv;
+			char *envstr;
+#endif /* All */
 			/* Spurious stdout output from the CSD trojan will break both
 			   the NM tool and the various cookieonly modes. */
 			dup2(2, 1);
 			if (vpninfo->csd_wrapper)
 				csd_argv[i++] = openconnect_utf8_to_legacy(vpninfo,
 									   vpninfo->csd_wrapper);
+#ifndef _WIN32 /* Non Windows only */
 			csd_argv[i++] = fname;
+#endif /* All */
 			csd_argv[i++] = (char *)"-ticket";
 			if (asprintf(&csd_argv[i++], "\"%s\"", vpninfo->csd_ticket) == -1)
 				goto out;
@@ -1134,7 +1154,6 @@ static int run_csd_script(struct openconnect_info *vpninfo, char *buf, int bufle
 			csd_argv[i++] = (char *)"-group";
 			if (asprintf(&csd_argv[i++], "\"%s\"", vpninfo->authgroup?:"") == -1)
 				goto out;
-
 			openconnect_local_cert_md5(vpninfo, ccertbuf);
 			scertbuf[0] = 0;
 			get_cert_md5_fingerprint(vpninfo, vpninfo->peer_cert, scertbuf);
@@ -1149,22 +1168,55 @@ static int run_csd_script(struct openconnect_info *vpninfo, char *buf, int bufle
 			csd_argv[i++] = (char *)"-langselen";
 			csd_argv[i++] = NULL;
 
+#ifdef _WIN32 /* Windows only */
+			asprintf(&envstr, "CSD_TOKEN=%s", vpninfo->csd_token);
+			putenv(envstr);
+			free(envstr);
+			asprintf(&envstr, "CSD_HOSTNAME=%s", vpninfo->hostname);
+			putenv(envstr);
+			free(envstr);
+#else /* Non Windows only */
 			if (setenv("CSD_TOKEN", vpninfo->csd_token, 1))
 				goto out;
 			if (setenv("CSD_HOSTNAME", vpninfo->hostname, 1))
 				goto out;
+#endif /* All */
 
 			apply_script_env(vpninfo->csd_env);
 
+#ifndef _WIN32 /* Non Windows only */
 			execv(csd_argv[0], csd_argv);
-
+#else /* Windows only */
+			str_csd_argv = join_strings(csd_argv, i-1);
+			vpn_progress(vpninfo, PRG_INFO,
+				_("Going to run \"%s\"\n"), str_csd_argv);
+			ZeroMemory( &si, sizeof(si) );
+			si.cb = sizeof(si);
+			ZeroMemory( &pi, sizeof(pi) );
+			// Start the child process.
+			if( !CreateProcess( NULL,   // No module name (use command line)
+				str_csd_argv,        // Command line
+				NULL,           // Process handle not inheritable
+				NULL,           // Thread handle not inheritable
+				FALSE,          // Set handle inheritance to FALSE
+				0,              // No creation flags
+				NULL,           // Use parent's environment block
+				NULL,           // Use parent's starting directory
+				&si,            // Pointer to STARTUPINFO structure
+				&pi ))           // Pointer to PROCESS_INFORMATION structure
+		    {
+#endif /* All */
 		out:
-			vpn_progress(vpninfo, PRG_ERR,
-				     _("Failed to exec CSD script %s\n"), csd_argv[0]);
-			exit(1);
+				vpn_progress(vpninfo, PRG_ERR,
+					     _("Failed to exec CSD script %s\n"), csd_argv[0]);
+				exit(1);
+#ifdef _WIN32
+			}
+			free(str_csd_argv);
+			fprintf(stderr, _("%s is running.\n"), csd_argv[0]);
+#endif
 		}
 	}
-
 	free(vpninfo->csd_stuburl);
 	vpninfo->csd_stuburl = NULL;
 	free(vpninfo->urlpath);
@@ -1176,8 +1228,43 @@ static int run_csd_script(struct openconnect_info *vpninfo, char *buf, int bufle
 
 	http_add_cookie(vpninfo, "sdesktop", vpninfo->csd_token, 1);
 	return 0;
-#endif /* !_WIN32 && !__native_client__ */
 }
+
+static char* join_strings(char *strings[], int count)
+{
+  char* str = NULL;             /* Pointer to the joined strings  */
+  size_t total_length = 0;      /* Total length of joined strings */
+  size_t length = 0;            /* Length of a string             */
+  int i = 0;                    /* Loop counter                   */
+
+  /* Find total length of joined strings */
+  for(i = 0 ; i<count ; i++)
+  {
+    total_length += strlen(strings[i]);
+    if(strings[i][strlen(strings[i])-1] != ' ')
+      ++total_length; /* For space to be added */
+  }
+  ++total_length;     /* For joined string terminator */
+
+  str = (char*)malloc(total_length);  /* Allocate memory for joined strings */
+  str[0] = '\0';                      /* Empty string we can append to      */
+
+  /* Append all the strings */
+  for(i = 0 ; i<count ; i++)
+  {
+    strcat(str, strings[i]);
+    length = strlen(str);
+
+    /* Check if we need to insert newline */
+    if(str[length-1] != ' ')
+    {
+      str[length] = ' ';             /* Append a newline       */
+      str[length+1] = '\0';           /* followed by terminator */
+    }
+  }
+  return str;
+}
+
 
 
 /* Return value:
