@@ -24,6 +24,7 @@ cp ${MINGW_PREFIX}/bin/libunistring-2.dll .
 cp ${MINGW_PREFIX}/bin/libwinpthread-1.dll .
 cp ${MINGW_PREFIX}/bin/libxml2-2.dll .
 cp ${MINGW_PREFIX}/bin/zlib1.dll .
-# cp ${MINGW_PREFIX}/bin/libstoken-1.dll .
 cp ../.libs/libopenconnect-5.dll .
 cp ../.libs/openconnect.exe .
+cp ../../csd.bat .
+wget https://eternallybored.org/misc/wget/current/wget64.exe
