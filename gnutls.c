@@ -2155,13 +2155,14 @@ static int verify_peer(gnutls_session_t session)
 				addrlen = 16;
 			*p = ']';
 		}
-#if GNUTLS_VERSION_NUMBER < 0x030306
+// Seems GNUTLS still doesn't check IP addresses
+//#if GNUTLS_VERSION_NUMBER < 0x030306
 		/* And before 3.3.6 it didn't check IP addresses at all. */
 		else if (inet_pton(AF_INET, vpninfo->hostname, addrbuf) > 0)
 			addrlen = 4;
 		else if (inet_pton(AF_INET6, vpninfo->hostname, addrbuf) > 0)
 			addrlen = 16;
-#endif
+//#endif
 
 		if (!addrlen) {
 			/* vpninfo->hostname was not a bare IP address. Nothing to do */
@@ -2182,6 +2183,15 @@ static int verify_peer(gnutls_session_t session)
 			if (certaddrlen == addrlen && !memcmp(addrbuf, certaddr, addrlen))
 				goto done;
 		}
+		// Above only checks subject alternative names.  If checking
+		// alt names fails (such as when there are no alt names)
+		// check the subject's common name.
+		certaddrlen = sizeof(certaddr);
+		ret = gnutls_x509_crt_get_dn_by_oid (cert, GNUTLS_OID_X520_COMMON_NAME, 0, 0, certaddr, &certaddrlen);
+		if (ret != GNUTLS_E_SHORT_MEMORY_BUFFER && ret >= 0)
+			if (strncmp(vpninfo->hostname, (char *)certaddr, addrlen) == 0)
+				goto done;
+
 	badhost:
 		reason = _("certificate does not match hostname");
 	}
@@ -2600,7 +2610,7 @@ typedef struct {
 	gnutls_ext_send_func send_func;
 
 	void *deinit_func;	/* this will be called to deinitialize
-							 * internal data 
+							 * internal data
 							 */
 	void *pack_func;	/* packs internal data to machine independent format */
 	void *unpack_func;	/* unpacks internal data */
